@@ -22,7 +22,7 @@ This adapter reads GPS data from a serial or USB GPS device and makes it availab
 	### **WORK IN PROGRESS**
 -->
 ## Changelog
-### 0.0.2 (2025-12-01)
+### **WORK IN PROGRESS**
 - (@GermanBluefox) Initial release
 
 ## License

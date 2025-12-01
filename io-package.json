@@ -3,19 +3,6 @@
     "name": "serial-gps",
     "version": "0.0.2",
     "news": {
-      "0.0.2": {
-        "en": "Initial release",
-        "de": "Erstausstrahlung",
-        "ru": "Первоначальное освобождение",
-        "pt": "Lançamento inicial",
-        "nl": "Eerste vrijgave",
-        "fr": "Libération initiale",
-        "it": "Rilascio iniziale",
-        "es": "Liberación inicial",
-        "pl": "Początkowe wydanie",
-        "uk": "Початковий реліз",
-        "zh-cn": "初步释放"
-      }
     },
     "titleLang": {
       "en": "Read GPS data",
