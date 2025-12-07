@@ -15,7 +15,14 @@ This adapter reads GPS data from a serial or USB GPS device and makes it availab
 **This adapter uses Sentry libraries to automatically report exceptions and code errors to the developers.** For more details and for information how to disable the error reporting see [Sentry-Plugin Documentation](https://github.com/ioBroker/plugin-sentry#plugin-sentry)! Sentry reporting is used starting with js-controller 3.0.
 
 ## Getting Started
+Insert USB or serial GPS receiver into your ioBroker host system. Make sure the device is recognized by the operating system and note the assigned serial port (e.g. COM3 on Windows or /dev/ttyUSB0 on Linux).
+Go to the adapter configuration page and select the serial port and other parameters if necessary (default baud rate is usually 4800 or 9600). Save and start the adapter. After a while, GPS data should appear in the adapter's data points.
 
+## Tested devices
+Normally, all devices that deliver NMEA data via serial or USB should work. Here are some devices that have been tested:
+- GlobalSat BU-353N5 USB-GNSS-Receiver
+- VK-162 G-Mouse USB GPS
+- G72 G-Mouse USB
 
 <!--
 	Placeholder for the next version (at the beginning of the line):
