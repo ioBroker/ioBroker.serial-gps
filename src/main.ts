@@ -150,7 +150,7 @@ export class SerialGpsAdapter extends Adapter {
                                             obj.callback,
                                         );
                                     }
-                                } catch (e) {
+                                } catch {
                                     this.sendTo(
                                         obj.from,
                                         obj.command,
@@ -226,7 +226,7 @@ export class SerialGpsAdapter extends Adapter {
 
         let receivedData = false;
         let receiveBuffer = '';
-        const dataListener = (data: Buffer) => {
+        const dataListener = (data: Buffer): void => {
             receiveBuffer += data.toString('utf8');
             this.log.info(`Received data at baud rate ${baudRate}: ${receiveBuffer}`);
             // try to detect specific NMEA sentence starts
@@ -489,35 +489,39 @@ export class SerialGpsAdapter extends Adapter {
                 await this.processReceivedData(data);
             });
 
-            this.serialPort.on('error', (err: Error) => {
+            this.serialPort.on('error', async (err: Error): Promise<void> => {
                 this.log.error(`Serial port error (${this.config.serialPort}): ${err.message || err}`);
-                this.setStateIfChangedAsync('info.connection', false);
+                await this.setStateIfChangedAsync('info.connection', false);
 
                 this.reconnectTimer ||= setTimeout(() => {
                     this.reconnectTimer = null;
                     this.log.info(`Reconnecting to serial port: ${this.config.serialPort}`);
-                    this.openPort();
+                    this.openPort().catch(error => this.log.warn(`Error opening serial port: ${error.message || err}`));
                 }, 5000);
             });
 
-            this.serialPort.on('close', () => {
+            this.serialPort.on('close', async (): Promise<void> => {
                 this.log.info(`Serial port closed: ${this.config.serialPort}`);
-                this.setStateIfChangedAsync('info.connection', false);
+                await this.setStateIfChangedAsync('info.connection', false);
 
                 this.reconnectTimer ||= setTimeout(() => {
                     this.reconnectTimer = null;
                     this.log.info(`Reconnecting to serial port: ${this.config.serialPort}`);
-                    this.openPort();
+                    this.openPort().catch((err: Error) =>
+                        this.log.warn(`Error reopening serial port: ${err.message || err}`),
+                    );
                 }, 5000);
             });
         } catch (error) {
             // Cannot open port
             this.log.error(`Error parsing serial port: ${error.message || error}`);
-            this.setStateIfChangedAsync('info.connection', false);
+            await this.setStateIfChangedAsync('info.connection', false);
             this.reconnectTimer ||= setTimeout(() => {
                 this.reconnectTimer = null;
                 this.log.info(`Reconnecting to serial port: ${this.config.serialPort}`);
-                this.openPort();
+                this.openPort().catch((err: Error) =>
+                    this.log.warn(`Error opening serial port: ${err.message || err}`),
+                );
             }, 5000);
         }
     }
@@ -529,7 +533,7 @@ export class SerialGpsAdapter extends Adapter {
             sock.on('message', async (data: Buffer): Promise<void> => {
                 await this.setStateIfChangedAsync('info.connection', true);
                 // Just push the data to handler
-                await this.processReceivedData(Buffer.from(`${data.toString()}\n`))
+                await this.processReceivedData(Buffer.from(`${data.toString()}\n`));
             });
 
             sock.on('error', (err: Error) => this.log.error(`UDP server error: ${err.message || err}`));
@@ -567,12 +571,12 @@ export class SerialGpsAdapter extends Adapter {
         });
     }
 
-    main(): void {
-        this.setState('info.connection', false, true);
+    async main(): Promise<void> {
+        await this.setStateAsync('info.connection', false, true);
         // Open UDP port 50547 for test purposes
         this.openUdpServer(50547);
 
-        this.openPort().then(() => {});
+        this.openPort().catch((err: Error) => this.log.error(`Error opening serial port: ${err.message || err}`));
     }
 }
 
