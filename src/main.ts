@@ -448,9 +448,9 @@ export class SerialGpsAdapter extends Adapter {
         const chunk = data.toString('utf8');
         this.recvBuffer += chunk;
 
+        let idx = this.recvBuffer.indexOf('\n');
         // process complete lines only (lines end with `\n`)
-        while (this.recvBuffer.indexOf('\n') !== -1) {
-            const idx = this.recvBuffer.indexOf('\n');
+        while (idx !== -1) {
             const line = this.recvBuffer.slice(0, idx + 1); // include newline
             this.recvBuffer = this.recvBuffer.slice(idx + 1);
             try {
@@ -458,6 +458,7 @@ export class SerialGpsAdapter extends Adapter {
             } catch (e) {
                 this.log.error(`Error processing serial data: ${(e as Error).message || e}`);
             }
+            idx = this.recvBuffer.indexOf('\n');
         }
     }
 
@@ -527,13 +528,11 @@ export class SerialGpsAdapter extends Adapter {
 
             sock.on('message', async (data: Buffer): Promise<void> => {
                 await this.setStateIfChangedAsync('info.connection', true);
-                // Just push the data to
-                await this.processReceivedData(data);
+                // Just push the data to handler
+                await this.processReceivedData(Buffer.from(`${data.toString()}\n`))
             });
 
-            sock.on('error', (err: Error) => {
-                this.log.error(`UDP server error: ${err.message || err}`);
-            });
+            sock.on('error', (err: Error) => this.log.error(`UDP server error: ${err.message || err}`));
 
             sock.on('listening', () => {
                 const address = sock.address();

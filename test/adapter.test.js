@@ -1,22 +1,16 @@
-/* jshint -W097 */
-/* jshint strict: true */
-/* jslint node: true */
-/* jslint esversion: 6 */
 'use strict';
 
 const setup = require('@iobroker/legacy-testing');
 const { readFileSync } = require('node:fs');
-import * as dgram from 'node:dgram';
+const { createSocket } = require('node:dgram');
 
 let objects = null;
 let states = null;
-let mqttClientEmitter = null;
-let connected = false;
 
-function checkConnection(value, done, counter) {
+function checkConnection(done, counter) {
     counter ||= 0;
     if (counter > 20) {
-        done?.(`Cannot check ${value}`);
+        done?.('Cannot check connection after 20 attempts');
         return;
     }
 
@@ -24,41 +18,37 @@ function checkConnection(value, done, counter) {
         if (err) {
             console.error(err);
         }
-        if (
-            typeof state?.val === 'string' &&
-            ((!value && state.val === '') || (value && state.val.split(',').includes(value)))
-        ) {
-            connected = value;
+        if (state?.val) {
             done();
         } else {
-            setTimeout(() => checkConnection(value, done, counter + 1), 1000);
+            setTimeout(() => checkConnection(done, counter + 1), 1000);
         }
     });
 }
 
-export function sendUdpString(message, host = '127.0.0.1', port = 50547) {
-    return new Promise((resolve, reject) => {
-        const sock = dgram.createSocket('udp4');
-        const buf = Buffer.from(message, 'utf8');
+let interval = null;
 
-        sock.send(buf, 0, buf.length, port, host, (err) => {
+function sendDataToImitateConnection() {
+    interval ||= setInterval(() => {
+        const sock = createSocket('udp4');
+        const buf = Buffer.from('GNGGA,191721.000,4331.6629,N,01557.8394,E,2,18,0.70,-4.7,M,40.9,M,,*5F', 'utf8');
+
+        sock.send(buf, 0, buf.length, 50547, '127.0.0.1', (err) => {
             sock.close();
             if (err) {
-                return reject(err);
+                console.log('Cannot send data to imitate connection', err);
             }
-            resolve();
         });
 
         sock.on('error', (err) => {
             sock.close();
-            reject(err);
+            console.log('Cannot send data to imitate connection', err);
         });
-    });
+    }, 1000);
 }
 
-
-describe('serial-gps server: Test parser', () => {
-    before('serial-gps server: Start js-controller', function (_done) {
+describe.only('serial-gps: Test parser', () => {
+    before('serial-gps: Start js-controller', function (_done) {
         //
         this.timeout(600000); // because of the first installation from npm
         setup.adapterStarted = false;
@@ -79,38 +69,35 @@ describe('serial-gps server: Test parser', () => {
         });
     });
 
-    it('serial-gps Server: Check if connected to MQTT broker', done => {
-        if (!connected) {
-            checkConnection(true, done);
-        } else {
+    it('serial-gps: Check if connected', done => {
+        sendDataToImitateConnection();
+        checkConnection(() => {
+            clearInterval(interval);
+            interval = null;
             done();
-        }
-    }).timeout(2000);
+        });
+    }).timeout(10000);
 
-    it('serial-gps Server: It must see position and other values', async () => {
+    it('serial-gps: It must see position and other values', async () => {
         const data = readFileSync(`${__dirname}/data.txt`).toString().split('\n');
-        const sock = dgram.createSocket('udp4');
+        const sock = createSocket('udp4');
         for (const line of data) {
             await new Promise((resolve, reject) => {
-                const buf = Buffer.from(line, 'utf8');
+                const buf = Buffer.from(`${line}\n`, 'ascii');
 
-                sock.send(buf, 0, buf.length, 50547, '127.0.0.1', (err) => {
-                    if (err) {
-                        return reject(err);
-                    }
-                    resolve();
-                });
+                sock.send(buf, 0, buf.length, 50547, '127.0.0.1', err => err ? reject(err) : resolve());
 
-                sock.on('error', (err) => {
-
-                    reject(err);
-                });
+                sock.on('error', (err) => reject(err));
             });
         }
         sock.close();
         // check the values
-        let state = new Promise(resolve => states.getState('serial-gps.0.info.connection', (_err, state) => resolve(state)));
-        if (state.val !== true) {
+        let state = await new Promise(resolve => states.getState('serial-gps.0.gps.latitude', (_err, state) => resolve(state)));
+        if (state.val !== 43.527715) {
+            throw new Error(`State info.connection expected to be true but found ${state.val}`);
+        }
+        state = await new Promise(resolve => states.getState('serial-gps.0.gps.longitude', (_err, state) => resolve(state)));
+        if (state.val !== 15.96399) {
             throw new Error(`State info.connection expected to be true but found ${state.val}`);
         }
     }).timeout(5000);
