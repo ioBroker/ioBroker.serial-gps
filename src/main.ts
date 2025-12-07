@@ -1,5 +1,6 @@
-import { Adapter, type AdapterOptions } from '@iobroker/adapter-core'; // Get common adapter utils
+import { type Socket, createSocket } from 'node:dgram';
 import { SerialPort } from 'serialport';
+import { Adapter, type AdapterOptions } from '@iobroker/adapter-core'; // Get common adapter utils
 import type { SerialGpsAdapterConfig } from './types';
 
 function verifyChecksum(sentence: string): boolean {
@@ -62,10 +63,12 @@ function parseNmeaDateTime(timeStr?: string, dateStr?: string): number | null {
     const ss = Math.floor(secFloat);
     const ms = Math.round((secFloat - ss) * 1000);
 
-    let year = 1970, month = 0, day = 1;
+    let year = 1970,
+        month = 0,
+        day = 1;
     if (dateStr && dateStr.length >= 6) {
         day = parseInt(dateStr.slice(0, 2) || '1', 10);
-        month = (parseInt(dateStr.slice(2, 4) || '1', 10) - 1);
+        month = parseInt(dateStr.slice(2, 4) || '1', 10) - 1;
         const yy = parseInt(dateStr.slice(4, 6) || '0', 10);
         year = yy >= 70 ? 1900 + yy : 2000 + yy;
     } else {
@@ -79,7 +82,6 @@ function parseNmeaDateTime(timeStr?: string, dateStr?: string): number | null {
     return Date.UTC(year, month, day, hh, mm, ss, ms);
 }
 
-
 export class SerialGpsAdapter extends Adapter {
     declare config: SerialGpsAdapterConfig;
     private serialPort?: SerialPort;
@@ -87,6 +89,7 @@ export class SerialGpsAdapter extends Adapter {
     private lastStates = new Map<string, { val: any; ts: number }>();
     private recvBuffer = '';
     private lastDate = ''; // ddmmyy aus letztem RMC, für GGA Zeitkombination
+    private udpServer?: Socket;
 
     public constructor(options: Partial<AdapterOptions> = {}) {
         super({
@@ -97,6 +100,7 @@ export class SerialGpsAdapter extends Adapter {
                     clearTimeout(this.reconnectTimer);
                     this.reconnectTimer = null;
                 }
+                await this.closeUdpServer();
                 await this.closePort();
                 callback();
             },
@@ -337,6 +341,12 @@ export class SerialGpsAdapter extends Adapter {
                 continue;
             }
 
+            if (this.common?.loglevel === 'debug') {
+                console.log(body);
+            } else {
+                this.log.silly(body);
+            }
+
             const asteriskIdx = body.indexOf('*');
             const payload = asteriskIdx >= 0 ? body.substring(0, asteriskIdx) : body;
             const fields = payload.split(',');
@@ -434,6 +444,23 @@ export class SerialGpsAdapter extends Adapter {
         }
     }
 
+    private async processReceivedData(data: Buffer): Promise<void> {
+        const chunk = data.toString('utf8');
+        this.recvBuffer += chunk;
+
+        // process complete lines only (lines end with `\n`)
+        while (this.recvBuffer.indexOf('\n') !== -1) {
+            const idx = this.recvBuffer.indexOf('\n');
+            const line = this.recvBuffer.slice(0, idx + 1); // include newline
+            this.recvBuffer = this.recvBuffer.slice(idx + 1);
+            try {
+                await this.parseData(line);
+            } catch (e) {
+                this.log.error(`Error processing serial data: ${(e as Error).message || e}`);
+            }
+        }
+    }
+
     private async openPort(): Promise<void> {
         // Close existing port if open
         await this.closePort();
@@ -458,20 +485,7 @@ export class SerialGpsAdapter extends Adapter {
                     clearTimeout(this.reconnectTimer);
                     this.reconnectTimer = null;
                 }
-                const chunk = data.toString('utf8');
-                this.recvBuffer += chunk;
-
-                // process complete lines only (lines end with `\n`)
-                while (this.recvBuffer.indexOf('\n') !== -1) {
-                    const idx = this.recvBuffer.indexOf('\n');
-                    const line = this.recvBuffer.slice(0, idx + 1); // include newline
-                    this.recvBuffer = this.recvBuffer.slice(idx + 1);
-                    try {
-                        await this.parseData(line);
-                    } catch (e) {
-                        this.log.error(`Error processing serial data: ${(e as Error).message || e}`);
-                    }
-                }
+                await this.processReceivedData(data);
             });
 
             this.serialPort.on('error', (err: Error) => {
@@ -507,8 +521,58 @@ export class SerialGpsAdapter extends Adapter {
         }
     }
 
+    private openUdpServer(port: number = 50547): void {
+        try {
+            const sock = createSocket('udp4');
+
+            sock.on('message', async (data: Buffer): Promise<void> => {
+                await this.setStateIfChangedAsync('info.connection', true);
+                // Just push the data to
+                await this.processReceivedData(data);
+            });
+
+            sock.on('error', (err: Error) => {
+                this.log.error(`UDP server error: ${err.message || err}`);
+            });
+
+            sock.on('listening', () => {
+                const address = sock.address();
+                this.log.debug(
+                    `UDP server listening on ${typeof address === 'string' ? address : `${address.address}:${address.port} for test purposes`}`,
+                );
+            });
+
+            sock.bind(port);
+            this.udpServer = sock;
+        } catch (e) {
+            this.log.error(`Failed to start UDP server: ${(e as Error).message || e}`);
+        }
+    }
+
+    private closeUdpServer(): Promise<void> {
+        if (!this.udpServer) {
+            return Promise.resolve();
+        }
+        return new Promise(resolve => {
+            try {
+                this.udpServer!.close(() => {
+                    this.log.info('UDP server closed');
+                    this.udpServer = undefined;
+                    resolve();
+                });
+            } catch (e) {
+                this.log.warn(`Error closing UDP server: ${(e as Error).message || e}`);
+                this.udpServer = undefined;
+                resolve();
+            }
+        });
+    }
+
     main(): void {
         this.setState('info.connection', false, true);
+        // Open UDP port 50547 for test purposes
+        this.openUdpServer(50547);
+
         this.openPort().then(() => {});
     }
 }
