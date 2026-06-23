@@ -38,6 +38,8 @@ Normally, all devices that deliver NMEA data via serial or USB should work. Here
 ### 0.0.3 (2025-12-01)
 - (@GermanBluefox) Initial release
 
+[Older changelogs can be found there](CHANGELOG_OLD.md)
+
 ## License
 
 The MIT License (MIT)
