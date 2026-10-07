@@ -92,12 +92,16 @@ export class SerialGpsAdapter extends Adapter {
     private recvBuffer = '';
     private lastDate = ''; // ddmmyy aus letztem RMC, für GGA Zeitkombination
     private udpServer?: Socket;
+    /** Live port is closed on purpose (baud rate detection / test running) - do not reconnect */
+    private portReleased = false;
+    private unloading = false;
 
     public constructor(options: Partial<AdapterOptions> = {}) {
         super({
             ...options,
             name: 'serial-gps',
             unload: async callback => {
+                this.unloading = true;
                 if (this.reconnectTimer) {
                     clearTimeout(this.reconnectTimer);
                     this.reconnectTimer = null;
@@ -226,17 +230,36 @@ export class SerialGpsAdapter extends Adapter {
         });
     }
 
-    private async test(port: string, baudRate: string | number): Promise<boolean> {
-        let portClosed = false;
-        if (this.currentPath === port) {
-            portClosed = true;
+    /**
+     * Run `fn` with exclusive access to `port`. If the live connection uses the same port,
+     * it is closed before and reopened afterward (also if `fn` fails), without auto-reconnect in between.
+     */
+    private async withPortReleased<T>(port: string, fn: () => Promise<T>): Promise<T> {
+        const release = !!port && this.currentPath === port && !this.portReleased;
+        if (release) {
+            this.log.info(`Closing serial port ${port} temporarily for test`);
+            this.portReleased = true;
+            if (this.reconnectTimer) {
+                clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = null;
+            }
             await this.closePort();
         }
-        const result = await this.testPort(port, baudRate);
-        if (portClosed) {
-            await this.openPort();
+        try {
+            return await fn();
+        } finally {
+            if (release) {
+                this.portReleased = false;
+                if (!this.unloading) {
+                    this.log.info(`Reopening serial port after test`);
+                    await this.openPort();
+                }
+            }
         }
-        return result;
+    }
+
+    private test(port: string, baudRate: string | number): Promise<boolean> {
+        return this.withPortReleased(port, () => this.testPort(port, baudRate));
     }
 
     private async testPort(port: string, baudRate: number | string): Promise<boolean> {
@@ -296,27 +319,18 @@ export class SerialGpsAdapter extends Adapter {
         return false;
     }
 
-    private async detectBaudRate(port: string): Promise<number> {
-        let portClosed = false;
-        if (this.currentPath === port) {
-            portClosed = true;
-            await this.closePort();
-        }
-        const baudRatesToTest = [4800, 9600, 19200, 38400, 57600, 115200];
-        for (const baudRate of baudRatesToTest) {
-            this.log.info(`Testing baud rate: ${baudRate}`);
-            if (await this.testPort(port, baudRate)) {
-                if (portClosed) {
-                    await this.openPort();
+    private detectBaudRate(port: string): Promise<number> {
+        return this.withPortReleased(port, async () => {
+            const baudRatesToTest = [4800, 9600, 19200, 38400, 57600, 115200];
+            for (const baudRate of baudRatesToTest) {
+                this.log.info(`Testing baud rate: ${baudRate}`);
+                if (await this.testPort(port, baudRate)) {
+                    return baudRate;
                 }
-                return baudRate;
             }
-        }
-        this.log.warn(`Could not detect baud rate for port: ${port}`);
-        if (portClosed) {
-            await this.openPort();
-        }
-        return 0;
+            this.log.warn(`Could not detect baud rate for port: ${port}`);
+            return 0;
+        });
     }
 
     /**
@@ -350,11 +364,13 @@ export class SerialGpsAdapter extends Adapter {
     }
 
     private closePort(): Promise<void> {
-        if (this.serialPort) {
+        const port = this.serialPort;
+        if (port) {
+            this.serialPort = undefined;
             return new Promise(resolve => {
                 try {
-                    if (this.serialPort!.isOpen) {
-                        this.serialPort!.close(err => {
+                    if (port.isOpen) {
+                        port.close(err => {
                             if (err) {
                                 this.log.error(`Error closing serial port: ${err.message || err}`);
                             }
@@ -366,7 +382,6 @@ export class SerialGpsAdapter extends Adapter {
                 } catch (e) {
                     this.log.warn(`Error while closing port: ${(e as Error).message || e}`);
                 }
-                this.serialPort = undefined;
                 resolve();
             });
         }
@@ -527,6 +542,9 @@ export class SerialGpsAdapter extends Adapter {
     }
 
     private scheduleReconnect(): void {
+        if (this.portReleased || this.unloading) {
+            return;
+        }
         this.reconnectTimer ||= setTimeout(() => {
             this.reconnectTimer = null;
             this.log.info(`Reconnecting to serial port: ${this.currentPath || this.config.deviceId}`);
@@ -557,6 +575,8 @@ export class SerialGpsAdapter extends Adapter {
             this.serialPort.open(err => {
                 if (err) {
                     this.log.error(`Failed to open serial port ${this.currentPath}: ${err.message || err}`);
+                    this.setStateIfChangedAsync('info.connection', false).catch(() => {});
+                    this.scheduleReconnect();
                     return;
                 }
                 this.log.info(`Serial port opened: ${this.currentPath} @ ${this.config.baudRate}`);
