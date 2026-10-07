@@ -1,8 +1,21 @@
 {
   "common": {
     "name": "serial-gps",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "news": {
+      "1.0.1": {
+        "en": "Adapter requires node.js >= 22 now.\nBy test of the port that already used by same instance, the port will be released for tests.",
+        "de": "Adapter benötigt jetzt node.js >= 22.\nWenn dieselbe Instanz den Port testet, wird er für Tests freigegeben.",
+        "ru": "Теперь для адаптера требуется файл node.js >= 22.\nПосле тестирования порта, который уже использовался тем же экземпляром, порт будет выпущен для тестирования.",
+        "pt": "O adaptador exige node.js >= 2.\nAo testar a porta já usada pela mesma instância, ela será liberada para testes.",
+        "nl": "Voor de adapter is nu node.js >= 22 nodig.\nDoor de poort te testen die al door hetzelfde exemplaar werd gebruikt, wordt de poort vrijgegeven voor tests.",
+        "fr": "Adapter nécessite node.js >= 22.\nEn testant le port déjà utilisé par la même instance, le port sera publié pour les tests.",
+        "it": "Adapter richiede node.js >= 2 ora.\nTestando la porta già usata dalla stessa istanza, la porta verrà rilasciata per i test.",
+        "es": "El adaptador necesita node.js >= 22 ahora.\nAl probar el puerto que ya usó la misma instancia, se lanzará el puerto para las pruebas.",
+        "pl": "Adapter wymaga teraz node.js >= 22.\nW wyniku testu portu, który był już używany przez tę samą instancję, port zostanie zwolniony do testów.",
+        "uk": "Тепер адаптер вимагає node.js >= 22.\nЗа допомогою тестування порту, який вже використовувався тим же екземпляром, порт буде випущений для тестів.",
+        "zh-cn": "适配器现在需要 node.js >= 22。\n通过测试同一实例已经使用的端口，将释放该端口进行测试。"
+      },
       "1.0.0": {
         "en": "Added possibility to select GPS device by name instead of path",
         "de": "Möglichkeit hinzugefügt, GPS-Gerät mit Namen anstelle des Pfads auszuwählen",
