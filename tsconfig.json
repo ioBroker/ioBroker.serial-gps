@@ -4,12 +4,12 @@
     "compileOnSave": true,
     "compilerOptions": {
         "noEmit": true,
-        "allowJs": true,
-        "checkJs": true,
+        "allowJs": false,
 
         "skipLibCheck": true, // Don't report errors in 3rd party definitions
         "noEmitOnError": true,
         "outDir": "./build",
+        "rootDir": "./src",
         "esModuleInterop": true,
         "resolveJsonModule": true,
         "module": "Node16",
