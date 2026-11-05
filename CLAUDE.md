@@ -38,6 +38,7 @@ Almost everything lives in **`src/main.ts`** — a single `SerialGpsAdapter exte
 - `list` → enumerate serial ports (`SerialPort.list()`) for the port dropdown.
 - `detectBaudRate` → probe `[4800, 9600, 19200, 38400, 57600, 115200]` by opening each and watching 2s for a `$GxGGA`/`$GxRMC` sentence.
 - `test` → confirm a GPS receiver responds on a given port/baud.
+- `getMapUrl` → URL for the `iframeSendTo` of the "Current position" tab: `adapter/serial-gps/map.html?instance=N`, relative so that it is resolved against the admin page (reverse proxy prefix). `admin/map.html` is a static page served by admin; it loads `../../lib/js/socket.io.js` from admin (same connection as the classic settings pages), Leaflet from cdnjs, and subscribes to `serial-gps.N.gps.*` (position from `gps.latlon`, which is written in one piece). The other values of that tab are plain jsonConfig `state` items.
 Both `detectBaudRate` and `test` temporarily `closePort()` the live port if it matches, then `openPort()` again afterward.
 
 **NMEA parsing specifics worth knowing before editing `parseData`:**
@@ -46,7 +47,7 @@ Both `detectBaudRate` and `test` temporarily `closePort()` the live port if it m
 - GGA sentences carry time but no date, so `lastDate` is cached from the most recent RMC and reused for GGA timestamps (`parseNmeaDateTime`).
 - `position` state is `lon;lat`; `latlon` state is `lat;lon` — these orderings are intentional and consumed differently downstream.
 
-**State writes are throttled:** `setStateIfChangedAsync()` skips writes when the value is unchanged *and* less than 60s old (dedup via the `lastStates` map). Use it rather than `setStateAsync` for the high-frequency `gps.*` states.
+**State writes are throttled:** `setStateIfChangedAsync()` skips writes when the value is unchanged *and* less than 60s old (dedup via the `lastStates` map). On top of it, `gps.*` values go through `setGpsStateAsync()` (at most once per `config.updateInterval` seconds) and the four position states through `setPositionAsync()` (interval plus `config.minDistance` meters from the last written position, `distanceMeters()` haversine). `gps.course` goes through `setCourseAsync()` (interval plus `config.minCourseChange` degrees, wrap-around at 360°, and only while the RMC speed is at least `config.minCourseSpeed` km/h). `info.connection` is never throttled. All four options default to `0` (off = previous behavior).
 
 ## Conventions
 

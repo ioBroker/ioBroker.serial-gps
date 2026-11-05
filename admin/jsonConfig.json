@@ -1,140 +1,382 @@
 {
-    "type": "panel",
+    "type": "tabs",
     "i18n": true,
     "items": {
-        "selectBy": {
-            "type": "select",
-            "label": "Select device by",
-            "options": [
-                {
-                    "value": "port",
-                    "label": "Serial port"
+        "_main": {
+            "type": "panel",
+            "label": "Main settings",
+            "items": {
+                "selectBy": {
+                    "type": "select",
+                    "label": "Select device by",
+                    "options": [
+                        {
+                            "value": "port",
+                            "label": "Serial port"
+                        },
+                        {
+                            "value": "device",
+                            "label": "USB device ID"
+                        }
+                    ],
+                    "default": "port",
+                    "xs": 12,
+                    "sm": 12,
+                    "md": 6,
+                    "lg": 4,
+                    "xl": 4
                 },
-                {
-                    "value": "device",
-                    "label": "USB device ID"
+                "serialPort": {
+                    "newLine": true,
+                    "type": "selectSendTo",
+                    "label": "Serial port",
+                    "command": "list",
+                    "default": "",
+                    "hidden": "data.selectBy === 'device'",
+                    "xs": 12,
+                    "sm": 12,
+                    "md": 4,
+                    "lg": 2,
+                    "xl": 2
+                },
+                "deviceId": {
+                    "newLine": true,
+                    "type": "selectSendTo",
+                    "label": "USB device",
+                    "command": "listDevices",
+                    "default": "",
+                    "hidden": "data.selectBy !== 'device'",
+                    "xs": 12,
+                    "sm": 12,
+                    "md": 6,
+                    "lg": 4,
+                    "xl": 4
+                },
+                "baudRate": {
+                    "newLine": true,
+                    "type": "select",
+                    "label": "Baud rate",
+                    "noTranslation": true,
+                    "options": [
+                        {
+                            "value": 4800,
+                            "label": "4800"
+                        },
+                        {
+                            "value": 9600,
+                            "label": "9600"
+                        },
+                        {
+                            "value": 19200,
+                            "label": "19200"
+                        },
+                        {
+                            "value": 38400,
+                            "label": "38400"
+                        },
+                        {
+                            "value": 57600,
+                            "label": "57600"
+                        },
+                        {
+                            "value": 115200,
+                            "label": "115200"
+                        }
+                    ],
+                    "default": "9600",
+                    "xs": 12,
+                    "sm": 12,
+                    "md": 4,
+                    "lg": 2,
+                    "xl": 2
+                },
+                "_detectBaudRate": {
+                    "type": "sendTo",
+                    "command": "detectBaudRate",
+                    "label": "Detect baud rate",
+                    "variant": "outlined",
+                    "jsonData": "{ \"serialPort\": \"${data.serialPort}\" }",
+                    "useNative": true,
+                    "error": {
+                        "Cannot detect baud rate": {
+                            "en": "Cannot detect baud rate",
+                            "de": "Kann Baudrate nicht erkennen",
+                            "ru": "Не удается определить скорость передачи данных"
+                        }
+                    },
+                    "xs": 12,
+                    "sm": 12,
+                    "md": 4,
+                    "lg": 2,
+                    "xl": 2,
+                    "showProcess": true
+                },
+                "_test": {
+                    "newLine": true,
+                    "type": "sendTo",
+                    "command": "test",
+                    "label": "Test",
+                    "variant": "contained",
+                    "jsonData": "{ \"serialPort\": \"${data.serialPort}\", \"baudRate\": \"${data.baudRate}\" }",
+                    "result": {
+                        "GPS Receiver detected": {
+                            "en": "GPS Receiver detected",
+                            "de": "GPS Empfänger erkannt",
+                            "ru": "GPS-приемник обнаружен"
+                        }
+                    },
+                    "error": {
+                        "GPS Receiver not detected": {
+                            "en": "GPS Receiver not detected",
+                            "de": "GPS Empfänger nicht erkannt",
+                            "ru": "GPS-приемник не обнаружен"
+                        }
+                    },
+                    "xs": 12,
+                    "sm": 12,
+                    "md": 4,
+                    "lg": 2,
+                    "xl": 2,
+                    "showProcess": true,
+                    "icon": "send"
                 }
-            ],
-            "default": "port",
-            "xs": 12,
-            "sm": 12,
-            "md": 6,
-            "lg": 4,
-            "xl": 4
+            }
         },
-        "serialPort": {
-            "newLine": true,
-            "type": "selectSendTo",
-            "label": "Serial port",
-            "command": "list",
-            "default": "",
-            "hidden": "data.selectBy === 'device'",
-            "xs": 12,
-            "sm": 12,
-            "md": 4,
-            "lg": 2,
-            "xl": 2
-        },
-        "deviceId": {
-            "newLine": true,
-            "type": "selectSendTo",
-            "label": "USB device",
-            "command": "listDevices",
-            "default": "",
-            "hidden": "data.selectBy !== 'device'",
-            "xs": 12,
-            "sm": 12,
-            "md": 6,
-            "lg": 4,
-            "xl": 4
-        },
-        "baudRate": {
-            "newLine": true,
-            "type": "select",
-            "label": "Baud rate",
-            "noTranslation": true,
-            "options": [
-                {
-                    "value": 4800,
-                    "label": "4800"
+        "_updates": {
+            "type": "panel",
+            "label": "Update of values",
+            "items": {
+                "updateInterval": {
+                    "type": "number",
+                    "label": "Minimal update interval",
+                    "help": "0 - every received value. Otherwise each GPS value is updated at most once in this interval",
+                    "unit": "s",
+                    "min": 0,
+                    "default": 0,
+                    "xs": 12,
+                    "sm": 12,
+                    "md": 6,
+                    "lg": 4,
+                    "xl": 4
                 },
-                {
-                    "value": 9600,
-                    "label": "9600"
+                "minDistance": {
+                    "newLine": true,
+                    "type": "number",
+                    "label": "Minimal position change",
+                    "help": "0 - off. Latitude, longitude and position are only updated after the receiver moved at least this distance",
+                    "unit": "m",
+                    "min": 0,
+                    "default": 0,
+                    "xs": 12,
+                    "sm": 12,
+                    "md": 6,
+                    "lg": 4,
+                    "xl": 4
                 },
-                {
-                    "value": 19200,
-                    "label": "19200"
+                "minCourseChange": {
+                    "newLine": true,
+                    "type": "number",
+                    "label": "Minimal direction change",
+                    "help": "0 - off. The course is only updated after it changed at least by this angle",
+                    "unit": "°",
+                    "min": 0,
+                    "max": 180,
+                    "default": 0,
+                    "xs": 12,
+                    "sm": 12,
+                    "md": 6,
+                    "lg": 4,
+                    "xl": 4
                 },
-                {
-                    "value": 38400,
-                    "label": "38400"
-                },
-                {
-                    "value": 57600,
-                    "label": "57600"
-                },
-                {
-                    "value": 115200,
-                    "label": "115200"
+                "minCourseSpeed": {
+                    "type": "number",
+                    "label": "Minimal speed for direction",
+                    "help": "0 - off. The course is only updated while the speed is at least this value, because a standing receiver reports random directions",
+                    "unit": "km/h",
+                    "min": 0,
+                    "default": 0,
+                    "xs": 12,
+                    "sm": 12,
+                    "md": 6,
+                    "lg": 4,
+                    "xl": 4
                 }
-            ],
-            "default": "9600",
-            "xs": 12,
-            "sm": 12,
-            "md": 4,
-            "lg": 2,
-            "xl": 2
+            }
         },
-        "_detectBaudRate": {
-            "type": "sendTo",
-            "command": "detectBaudRate",
-            "label": "Detect baud rate",
-            "variant": "outlined",
-            "jsonData": "{ \"serialPort\": \"${data.serialPort}\" }",
-            "useNative": true,
-            "error": {
-                "Cannot detect baud rate": {
-                    "en": "Cannot detect baud rate",
-                    "de": "Kann Baudrate nicht erkennen",
-                    "ru": "Не удается определить скорость передачи данных"
+        "_position": {
+            "type": "panel",
+            "label": "Current position",
+            "items": {
+                "_notAlive": {
+                    "type": "infoBox",
+                    "boxType": "warning",
+                    "closeable": false,
+                    "text": "The instance is not running. The map is shown only while the instance is running.",
+                    "hidden": "_alive",
+                    "xs": 12
+                },
+                "_map": {
+                    "type": "iframeSendTo",
+                    "command": "getMapUrl",
+                    "hidden": "!_alive",
+                    "style": {
+                        "height": 450
+                    },
+                    "xs": 12
+                },
+                "_connection": {
+                    "newLine": true,
+                    "type": "state",
+                    "oid": "info.connection",
+                    "label": "Connection",
+                    "trueText": "connected",
+                    "falseText": "not connected",
+                    "trueTextStyle": {
+                        "color": "#4caf50"
+                    },
+                    "falseTextStyle": {
+                        "color": "#f44336"
+                    },
+                    "highlight": true,
+                    "xs": 12,
+                    "sm": 6,
+                    "md": 4,
+                    "lg": 3,
+                    "xl": 3
+                },
+                "_fixQuality": {
+                    "type": "state",
+                    "oid": "gps.fix_quality",
+                    "label": "Fix quality",
+                    "highlight": true,
+                    "xs": 12,
+                    "sm": 6,
+                    "md": 4,
+                    "lg": 3,
+                    "xl": 3
+                },
+                "_fixMode": {
+                    "type": "state",
+                    "oid": "gps.fix_mode",
+                    "label": "Fix mode",
+                    "highlight": true,
+                    "xs": 12,
+                    "sm": 6,
+                    "md": 4,
+                    "lg": 3,
+                    "xl": 3
+                },
+                "_satellites": {
+                    "type": "state",
+                    "oid": "gps.satellites",
+                    "label": "Satellites",
+                    "highlight": true,
+                    "xs": 12,
+                    "sm": 6,
+                    "md": 4,
+                    "lg": 3,
+                    "xl": 3
+                },
+                "_latitude": {
+                    "type": "state",
+                    "oid": "gps.latitude",
+                    "label": "Latitude",
+                    "digits": 6,
+                    "highlight": true,
+                    "xs": 12,
+                    "sm": 6,
+                    "md": 4,
+                    "lg": 3,
+                    "xl": 3
+                },
+                "_longitude": {
+                    "type": "state",
+                    "oid": "gps.longitude",
+                    "label": "Longitude",
+                    "digits": 6,
+                    "highlight": true,
+                    "xs": 12,
+                    "sm": 6,
+                    "md": 4,
+                    "lg": 3,
+                    "xl": 3
+                },
+                "_altitude": {
+                    "type": "state",
+                    "oid": "gps.altitude",
+                    "label": "Altitude",
+                    "digits": 1,
+                    "highlight": true,
+                    "xs": 12,
+                    "sm": 6,
+                    "md": 4,
+                    "lg": 3,
+                    "xl": 3
+                },
+                "_speed": {
+                    "type": "state",
+                    "oid": "gps.speed_kmh",
+                    "label": "Speed",
+                    "digits": 1,
+                    "highlight": true,
+                    "xs": 12,
+                    "sm": 6,
+                    "md": 4,
+                    "lg": 3,
+                    "xl": 3
+                },
+                "_course": {
+                    "type": "state",
+                    "oid": "gps.course",
+                    "label": "Course",
+                    "digits": 0,
+                    "highlight": true,
+                    "xs": 12,
+                    "sm": 6,
+                    "md": 4,
+                    "lg": 3,
+                    "xl": 3
+                },
+                "_hdop": {
+                    "type": "state",
+                    "oid": "gps.hdop",
+                    "label": "HDOP",
+                    "noTranslation": true,
+                    "digits": 2,
+                    "highlight": true,
+                    "xs": 12,
+                    "sm": 6,
+                    "md": 4,
+                    "lg": 3,
+                    "xl": 3
+                },
+                "_pdop": {
+                    "type": "state",
+                    "oid": "gps.pdop",
+                    "label": "PDOP",
+                    "noTranslation": true,
+                    "digits": 2,
+                    "highlight": true,
+                    "xs": 12,
+                    "sm": 6,
+                    "md": 4,
+                    "lg": 3,
+                    "xl": 3
+                },
+                "_vdop": {
+                    "type": "state",
+                    "oid": "gps.vdop",
+                    "label": "VDOP",
+                    "noTranslation": true,
+                    "digits": 2,
+                    "highlight": true,
+                    "xs": 12,
+                    "sm": 6,
+                    "md": 4,
+                    "lg": 3,
+                    "xl": 3
                 }
-            },
-            "xs": 12,
-            "sm": 12,
-            "md": 4,
-            "lg": 2,
-            "xl": 2,
-            "showProcess": true
-        },
-        "_test": {
-            "newLine": true,
-            "type": "sendTo",
-            "command": "test",
-            "label": "Test",
-            "variant": "contained",
-            "jsonData": "{ \"serialPort\": \"${data.serialPort}\", \"baudRate\": \"${data.baudRate}\" }",
-            "result": {
-                "GPS Receiver detected": {
-                    "en": "GPS Receiver detected",
-                    "de": "GPS Empfänger erkannt",
-                    "ru": "GPS-приемник обнаружен"
-                }
-            },
-            "error": {
-                "GPS Receiver not detected": {
-                    "en": "GPS Receiver not detected",
-                    "de": "GPS Empfänger nicht erkannt",
-                    "ru": "GPS-приемник не обнаружен"
-                }
-            },
-            "xs": 12,
-            "sm": 12,
-            "md": 4,
-            "lg": 2,
-            "xl": 2,
-            "showProcess": true,
-            "icon": "send"
+            }
         }
     }
 }

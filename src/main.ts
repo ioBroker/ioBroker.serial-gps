@@ -83,6 +83,15 @@ function parseNmeaDateTime(timeStr?: string, dateStr?: string): number | null {
     return Date.UTC(year, month, day, hh, mm, ss, ms);
 }
 
+/** Horizontal distance in meters between two positions (haversine, mean earth radius) */
+function distanceMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+    const toRad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * toRad;
+    const dLon = (lon2 - lon1) * toRad;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) * Math.sin(dLon / 2) ** 2;
+    return 2 * 6371008.8 * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
 export class SerialGpsAdapter extends Adapter {
     declare config: SerialGpsAdapterConfig;
     private serialPort?: SerialPort;
@@ -90,6 +99,16 @@ export class SerialGpsAdapter extends Adapter {
     private currentPath = '';
     private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     private lastStates = new Map<string, { val: any; ts: number }>();
+    /** gps.* states are written at most once per this interval (0 = every received value) */
+    private updateIntervalMs = 0;
+    /** Position states are written only after moving at least this far (0 = off) */
+    private minDistance = 0;
+    /** Course is written only after changing at least this many degrees (0 = off) */
+    private minCourseChange = 0;
+    /** Course is written only while moving at least this fast in km/h, a standing receiver reports random directions (0 = off) */
+    private minCourseSpeed = 0;
+    /** Last position written to the states, base for interval and distance of the next one */
+    private lastPosition: { lat: number; lon: number } | null = null;
     private recvBuffer = '';
     private lastDate = ''; // ddmmyy aus letztem RMC, für GGA Zeitkombination
     private udpServer?: Socket;
@@ -199,6 +218,19 @@ export class SerialGpsAdapter extends Adapter {
                                 }
                             }
 
+                            break;
+
+                        case 'getMapUrl':
+                            // "Current position" tab of the settings (iframeSendTo): admin/map.html, served by admin
+                            // relative to its own page, so it also works behind a reverse proxy with a path prefix
+                            if (obj.callback) {
+                                this.sendTo(
+                                    obj.from,
+                                    obj.command,
+                                    `adapter/serial-gps/map.html?instance=${this.instance}`,
+                                    obj.callback,
+                                );
+                            }
                             break;
 
                         case 'test':
@@ -405,6 +437,58 @@ export class SerialGpsAdapter extends Adapter {
         await this.setStateAsync(id, value, true);
     }
 
+    /** Write a gps.* value, but not more often than the configured update interval */
+    private async setGpsStateAsync(id: string, value: ioBroker.StateValue): Promise<void> {
+        const prev = this.lastStates.get(id);
+        if (prev && this.updateIntervalMs && Date.now() - prev.ts < this.updateIntervalMs) {
+            // a change within the interval is dropped; the next value after it is written
+            return;
+        }
+        await this.setStateIfChangedAsync(id, value);
+    }
+
+    /**
+     * Write latitude, longitude, position and latlon together. Besides the update interval, a new
+     * position is only taken over after moving at least `minDistance` meters from the last written one,
+     * so that the jitter of a standing receiver does not produce updates.
+     */
+    private async setPositionAsync(lat: number, lon: number): Promise<void> {
+        const last = this.lastPosition;
+        if (last) {
+            // latlon changes with every new position, so its last write is the last position update
+            const prev = this.lastStates.get('gps.latlon');
+            if (prev && this.updateIntervalMs && Date.now() - prev.ts < this.updateIntervalMs) {
+                return;
+            }
+            if (this.minDistance && distanceMeters(last.lat, last.lon, lat, lon) < this.minDistance) {
+                return;
+            }
+        }
+        this.lastPosition = { lat, lon };
+        await this.setStateIfChangedAsync('gps.latitude', lat);
+        await this.setStateIfChangedAsync('gps.longitude', lon);
+        await this.setStateIfChangedAsync('gps.position', `${lon};${lat}`);
+        await this.setStateIfChangedAsync('gps.latlon', `${lat};${lon}`);
+    }
+
+    /**
+     * Write the course only while moving at least `minCourseSpeed` km/h, and only if it turned at least
+     * `minCourseChange` degrees from the last written one (359° -> 1° is 2°). When standing, the last direction stays.
+     */
+    private async setCourseAsync(course: number, speedKmh: number): Promise<void> {
+        if (this.minCourseSpeed && speedKmh < this.minCourseSpeed) {
+            return;
+        }
+        const prev = this.lastStates.get('gps.course');
+        if (prev && this.minCourseChange) {
+            const diff = Math.abs(course - prev.val) % 360;
+            if (Math.min(diff, 360 - diff) < this.minCourseChange) {
+                return;
+            }
+        }
+        await this.setGpsStateAsync('gps.course', course);
+    }
+
     private async parseData(text: string): Promise<void> {
         // Split by '$' because some devices send multiple sentences in one chunk (sentences start with $)
         const parts = text
@@ -449,22 +533,19 @@ export class SerialGpsAdapter extends Adapter {
                     if (timeStr) {
                         const ts = parseNmeaDateTime(timeStr, this.lastDate || undefined);
                         if (ts !== null) {
-                            await this.setStateIfChangedAsync('gps.timestamp', ts);
+                            await this.setGpsStateAsync('gps.timestamp', ts);
                         }
                     }
                     if (!isNaN(fix)) {
-                        await this.setStateIfChangedAsync('gps.fix_quality', fix);
+                        await this.setGpsStateAsync('gps.fix_quality', fix);
                     }
                     if (lat !== null && lon !== null) {
-                        await this.setStateIfChangedAsync('gps.latitude', lat);
-                        await this.setStateIfChangedAsync('gps.longitude', lon);
-                        await this.setStateIfChangedAsync('gps.position', `${lon};${lat}`);
-                        await this.setStateIfChangedAsync('gps.latlon', `${lat};${lon}`);
+                        await this.setPositionAsync(lat, lon);
                         this.log.debug(`GGA parsed: lat=${lat}, lon=${lon}`);
                     }
-                    await this.setStateIfChangedAsync('gps.satellites', sats);
-                    await this.setStateIfChangedAsync('gps.hdop', hdop);
-                    await this.setStateIfChangedAsync('gps.altitude', alt);
+                    await this.setGpsStateAsync('gps.satellites', sats);
+                    await this.setGpsStateAsync('gps.hdop', hdop);
+                    await this.setGpsStateAsync('gps.altitude', alt);
 
                     const connected = fix > 0;
                     await this.setStateIfChangedAsync('info.connection', connected);
@@ -481,25 +562,22 @@ export class SerialGpsAdapter extends Adapter {
                     // speichere Datum für spätere GGA-Zeiten
                     if (dateStr) {
                         this.lastDate = dateStr;
-                        await this.setStateIfChangedAsync('gps.date', dateStr);
+                        await this.setGpsStateAsync('gps.date', dateStr);
                     }
                     // timestamp (Zeit + Datum)
                     const ts = parseNmeaDateTime(timeStr, dateStr);
                     if (ts !== null) {
-                        await this.setStateIfChangedAsync('gps.timestamp', ts);
+                        await this.setGpsStateAsync('gps.timestamp', ts);
                     }
                     if (lat !== null && lon !== null) {
-                        await this.setStateIfChangedAsync('gps.latitude', lat);
-                        await this.setStateIfChangedAsync('gps.longitude', lon);
-                        await this.setStateIfChangedAsync('gps.position', `${lon};${lat}`);
-                        await this.setStateIfChangedAsync('gps.latlon', `${lat};${lon}`);
+                        await this.setPositionAsync(lat, lon);
                         this.log.debug(`RMC parsed: lat=${lat}, lon=${lon}`);
                     }
                     // convert knots to km/h
                     const speedKmh = +(speedKnots * 1.852).toFixed(2);
-                    await this.setStateIfChangedAsync('gps.speed_knots', speedKnots);
-                    await this.setStateIfChangedAsync('gps.speed_kmh', speedKmh);
-                    await this.setStateIfChangedAsync('gps.course', course);
+                    await this.setGpsStateAsync('gps.speed_knots', speedKnots);
+                    await this.setGpsStateAsync('gps.speed_kmh', speedKmh);
+                    await this.setCourseAsync(course, speedKmh);
 
                     const connected = status === 'A';
                     await this.setStateIfChangedAsync('info.connection', connected);
@@ -513,11 +591,11 @@ export class SerialGpsAdapter extends Adapter {
                     // fix_mode: '2' -> "2D", '3' -> "3D", sonst original
                     const fixModeLabel = fixMode === '2' ? '2D' : fixMode === '3' ? '3D' : fixMode;
 
-                    await this.setStateIfChangedAsync('gps.fix_mode', fixModeLabel);
-                    await this.setStateIfChangedAsync('gps.pdop', pdop);
+                    await this.setGpsStateAsync('gps.fix_mode', fixModeLabel);
+                    await this.setGpsStateAsync('gps.pdop', pdop);
                     // hdop wird ggf. bereits durch GGA gesetzt; trotzdem aktualisieren ist ok
-                    await this.setStateIfChangedAsync('gps.hdop', hdop);
-                    await this.setStateIfChangedAsync('gps.vdop', vdop);
+                    await this.setGpsStateAsync('gps.hdop', hdop);
+                    await this.setGpsStateAsync('gps.vdop', vdop);
                 } else {
                     // other sentence types can be handled if needed
                     this.log.silly(`Unhandled NMEA sentence: ${type}`);
@@ -688,6 +766,17 @@ export class SerialGpsAdapter extends Adapter {
 
     async main(): Promise<void> {
         await this.setStateAsync('info.connection', false, true);
+
+        this.updateIntervalMs = Math.max(0, parseFloat(this.config.updateInterval as string) || 0) * 1000;
+        this.minDistance = Math.max(0, parseFloat(this.config.minDistance as string) || 0);
+        this.minCourseChange = Math.max(0, parseFloat(this.config.minCourseChange as string) || 0);
+        this.minCourseSpeed = Math.max(0, parseFloat(this.config.minCourseSpeed as string) || 0);
+        if (this.updateIntervalMs || this.minDistance || this.minCourseChange || this.minCourseSpeed) {
+            this.log.info(
+                `GPS values are updated at most every ${this.updateIntervalMs / 1000}s, position after moving at least ${this.minDistance}m, course after turning at least ${this.minCourseChange}° and from ${this.minCourseSpeed}km/h`,
+            );
+        }
+
         if (this.config.test) {
             // Open UDP port 50547 for test purposes
             await this.openUdpServer(50547);
