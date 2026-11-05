@@ -41,7 +41,7 @@ Normally, all devices that deliver NMEA data via serial or USB should work. Here
 	### **WORK IN PROGRESS**
 -->
 ## Changelog
-### **WORK IN PROGRESS**
+### 1.1.0 (2026-11-05)
 * (@GermanBluefox) Added options to limit the updates of the GPS values: a minimal update interval, a minimal position change, a minimal direction change and a minimal speed for the direction
 * (@GermanBluefox) The settings are split into tabs. The new tab "Current position" shows the position on an OpenStreetMap map and the current GPS values. Admin 7.7.28+ is required
 
@@ -58,9 +58,6 @@ Normally, all devices that deliver NMEA data via serial or USB should work. Here
 
 ### 0.0.4 (2025-12-03)
 - (@GermanBluefox) Corrected issues for repo checker
-
-### 0.0.3 (2025-12-01)
-- (@GermanBluefox) Initial release
 
 [Older changelogs can be found there](CHANGELOG_OLD.md)
 

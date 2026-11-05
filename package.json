@@ -1,6 +1,6 @@
 {
   "name": "iobroker.serial-gps",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "This adapter reads position from GPS mouse (serial or USB)",
   "author": {
     "name": "bluefox",
