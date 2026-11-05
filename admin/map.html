@@ -1,0 +1,189 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>GPS position</title>
+    <!-- Shown in the "Current position" tab of the instance settings (admin, iframeSendTo -> getMapUrl).
+         The socket client is served by admin itself; Leaflet comes from a CDN, the map tiles need internet anyway. -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <script src="../../lib/js/socket.io.js"></script>
+    <style>
+        html,
+        body,
+        #map {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            font-family: Roboto, Arial, sans-serif;
+        }
+        .overlay {
+            position: absolute;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.85);
+            color: #222;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 13px;
+            pointer-events: none;
+        }
+        #waiting {
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 15px;
+            padding: 8px 16px;
+        }
+        #info {
+            bottom: 24px;
+            left: 8px;
+            display: none;
+        }
+        .gps-marker {
+            background: none;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="waiting" class="overlay"></div>
+    <div id="info" class="overlay"></div>
+    <script>
+        'use strict';
+
+        const TEXTS = {
+            en: { waiting: 'Waiting for GPS position…', updated: 'Last position' },
+            de: { waiting: 'Warte auf GPS-Position…', updated: 'Letzte Position' },
+            ru: { waiting: 'Ожидание GPS-позиции…', updated: 'Последняя позиция' },
+            uk: { waiting: 'Очікування GPS-позиції…', updated: 'Остання позиція' },
+            pt: { waiting: 'Aguardando posição GPS…', updated: 'Última posição' },
+            nl: { waiting: 'Wachten op GPS-positie…', updated: 'Laatste positie' },
+            fr: { waiting: 'En attente de la position GPS…', updated: 'Dernière position' },
+            it: { waiting: 'In attesa della posizione GPS…', updated: 'Ultima posizione' },
+            es: { waiting: 'Esperando la posición GPS…', updated: 'Última posición' },
+            pl: { waiting: 'Oczekiwanie na pozycję GPS…', updated: 'Ostatnia pozycja' },
+            'zh-cn': { waiting: '正在等待 GPS 位置…', updated: '最后位置' },
+        };
+        const MAX_TRACK_POINTS = 500;
+
+        const args = new URLSearchParams(window.location.search);
+        const prefix = `serial-gps.${parseInt(args.get('instance'), 10) || 0}.gps.`;
+        let texts = TEXTS.en;
+        let lang = 'en';
+
+        const map = L.map('map', { zoomControl: true }).setView([0, 0], 2);
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>',
+        }).addTo(map);
+
+        const track = L.polyline([], { color: '#1976d2', weight: 3, opacity: 0.6 }).addTo(map);
+        let marker = null;
+        let position = null; // [lat, lon]
+        let course = null;
+        let speed = 0;
+        let lastTs = 0;
+
+        const waitingDiv = document.getElementById('waiting');
+        const infoDiv = document.getElementById('info');
+        waitingDiv.textContent = texts.waiting;
+
+        /** Arrow in the direction of travel, a dot when standing (the course of a standing receiver is random) */
+        function markerIcon() {
+            const moving = course !== null && speed >= 1;
+            const svg = moving
+                ? `<svg width="32" height="32" viewBox="0 0 32 32" style="transform: rotate(${course}deg)">
+                       <path d="M16 2 L27 28 L16 22 L5 28 Z" fill="#1976d2" stroke="#fff" stroke-width="2"/>
+                   </svg>`
+                : `<svg width="32" height="32" viewBox="0 0 32 32">
+                       <circle cx="16" cy="16" r="9" fill="#1976d2" stroke="#fff" stroke-width="3"/>
+                   </svg>`;
+            return L.divIcon({ className: 'gps-marker', html: svg, iconSize: [32, 32], iconAnchor: [16, 16] });
+        }
+
+        function updateInfo() {
+            if (!position) {
+                return;
+            }
+            const time = lastTs ? new Date(lastTs).toLocaleString(lang === 'zh-cn' ? 'zh-CN' : lang) : '';
+            infoDiv.textContent = `${position[0].toFixed(6)}, ${position[1].toFixed(6)}${time ? ` · ${texts.updated}: ${time}` : ''}`;
+            infoDiv.style.display = 'block';
+        }
+
+        function setPosition(latlon, ts) {
+            const [lat, lon] = (latlon || '').split(';').map(v => parseFloat(v));
+            if (isNaN(lat) || isNaN(lon) || (!lat && !lon)) {
+                return;
+            }
+            const first = !position;
+            position = [lat, lon];
+            lastTs = ts || lastTs;
+            waitingDiv.style.display = 'none';
+
+            if (!marker) {
+                marker = L.marker(position, { icon: markerIcon() }).addTo(map);
+            } else {
+                marker.setLatLng(position);
+            }
+
+            const points = track.getLatLngs();
+            const last = points[points.length - 1];
+            if (!last || last.lat !== lat || last.lng !== lon) {
+                track.addLatLng(position);
+                if (points.length >= MAX_TRACK_POINTS) {
+                    track.setLatLngs(track.getLatLngs().slice(-MAX_TRACK_POINTS));
+                }
+            }
+
+            if (first) {
+                map.setView(position, 17);
+            } else if (!map.getBounds().pad(-0.1).contains(position)) {
+                // follow the receiver when it leaves the visible area, but do not fight the user while zooming/panning inside
+                map.panTo(position);
+            }
+            updateInfo();
+        }
+
+        function onState(id, state) {
+            if (!state || !id.startsWith(prefix)) {
+                return;
+            }
+            const name = id.substring(prefix.length);
+            if (name === 'latlon') {
+                setPosition(state.val, state.ts);
+            } else if (name === 'course') {
+                course = parseFloat(state.val);
+                if (isNaN(course)) {
+                    course = null;
+                }
+                marker?.setIcon(markerIcon());
+            } else if (name === 'speed_kmh') {
+                speed = parseFloat(state.val) || 0;
+                marker?.setIcon(markerIcon());
+            }
+        }
+
+        // Same connection as the classic admin settings pages (admin/js/adapter-settings.js)
+        const parts = window.location.pathname.split('/');
+        parts.splice(-3);
+        const socket = io.connect(window.socketPath || '/', { path: `${parts.join('/')}/socket.io` });
+
+        socket.on('connect', () => {
+            socket.emit('getObject', 'system.config', (err, obj) => {
+                lang = obj?.common?.language || 'en';
+                texts = TEXTS[lang] || TEXTS.en;
+                waitingDiv.textContent = texts.waiting;
+                updateInfo();
+            });
+            socket.emit('getStates', `${prefix}*`, (err, states) => {
+                // course and speed first, so that the marker gets the right icon with the position
+                ['course', 'speed_kmh', 'latlon'].forEach(name => onState(prefix + name, states?.[prefix + name]));
+            });
+            socket.emit('subscribe', `${prefix}*`);
+        });
+        socket.on('stateChange', onState);
+    </script>
+</body>
+</html>
